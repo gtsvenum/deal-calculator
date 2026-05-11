@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RE Deal Calculator</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Deal Calc">
+    <meta name="theme-color" content="#0f0f0f">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; padding-top: env(safe-area-inset-top); }
+        .container { max-width: 600px; margin: 0 auto; padding: 16px; padding-bottom: 40px; }
+        h1 { text-align: center; font-size: 22px; margin-bottom: 16px; color: #fff; }
+        .section { background: #1a1a1a; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+        .section h2 { font-size: 13px; text-transform: uppercase; color: #888; margin-bottom: 12px; letter-spacing: 1px; }
+        .row { display: flex; gap: 10px; margin-bottom: 10px; }
+        .field { flex: 1; }
+        .field label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+        .field input, .field select { width: 100%; background: #222; border: 1px solid #333; border-radius: 8px; padding: 10px; color: #fff; font-size: 15px; }
+        .field input:focus, .field select:focus { outline: none; border-color: #4a9eff; }
+        .field select { appearance: none; -webkit-appearance: none; cursor: pointer; }
+        .calc-value { font-size: 14px; color: #4a9eff; padding: 8px 0 0; }
+
+        .summary { background: #1a1a2a; border: 1px solid #2a2a4a; border-radius: 12px; padding: 16px; margin-bottom: 12px; position: sticky; top: 8px; z-index: 10; }
+        .summary h2 { font-size: 13px; text-transform: uppercase; color: #7a7aaa; margin-bottom: 12px; letter-spacing: 1px; }
+        .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .summary-item { text-align: center; }
+        .summary-item .label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+        .summary-item .value { font-size: 20px; font-weight: 700; color: #fff; margin-top: 4px; }
+        .summary-item .value.profit { color: #34c759; }
+        .summary-item .value.loss { color: #ff4444; }
+        .summary-item .value.blue { color: #4a9eff; }
+
+        .divider { height: 1px; background: #333; margin: 12px 0; }
+
+        .breakdown { margin-top: 12px; }
+        .breakdown-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; color: #aaa; }
+        .breakdown-row .val { color: #fff; font-weight: 500; }
+        .breakdown-row.total { border-top: 1px solid #333; padding-top: 10px; margin-top: 4px; font-weight: 600; color: #fff; }
+        .breakdown-row.total .val { color: #4a9eff; }
+
+        .btn-export { display: block; width: 100%; background: #4a9eff; border: none; border-radius: 8px; padding: 14px; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+        .btn-export:hover { background: #3a8eef; }
+        .btn-reset { display: block; width: 100%; background: #222; border: 1px solid #333; border-radius: 8px; padding: 12px; color: #888; font-size: 14px; cursor: pointer; margin-top: 8px; }
+        .btn-reset:hover { background: #2a2a2a; color: #aaa; }
+
+        @media (max-width: 400px) {
+            .row { flex-direction: column; gap: 8px; }
+            .summary-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+            .summary-item .value { font-size: 17px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏠 RE Deal Calculator</h1>
+
+        <!-- Summary Dashboard -->
+        <div class="summary" id="summary">
+            <h2>Deal Summary</h2>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="label">Total Cost</div>
+                    <div class="value blue" id="sumTotalCost">$0</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Gross Profit</div>
+                    <div class="value" id="sumProfit">$0</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">ROI</div>
+                    <div class="value" id="sumROI">0%</div>
+                </div>
+                <div class="summary-item">
+                    <div class="label">Cash on Cash</div>
+                    <div class="value" id="sumCoC">0%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Purchase & Sale -->
+        <div class="section">
+            <h2>Purchase & Sale</h2>
+            <div class="row">
+                <div class="field">
+                    <label>Purchase Price ($)</label>
+                    <input type="number" id="purchasePrice" placeholder="350,000">
+                </div>
+                <div class="field">
+                    <label>After Repair Value ($)</label>
+                    <input type="number" id="arv" placeholder="550,000">
+                </div>
+            </div>
+        </div>
+
+        <!-- Purchase Settlement -->
+        <div class="section">
+            <h2>Purchase Settlement</h2>
+            <div class="row">
+                <div class="field">
+                    <label>Property Location</label>
+                    <select id="location">
+                        <option value="manual">Manual Entry</option>
+                        <optgroup label="Washington DC">
+                            <option value="dc">Washington, DC</option>
+                        </optgroup>
+                        <optgroup label="Maryland">
+                            <option value="md-montgomery">Montgomery County, MD</option>
+                            <option value="md-pg">Prince George's County, MD</option>
+                            <option value="md-anne-arundel">Anne Arundel County, MD</option>
+                            <option value="md-howard">Howard County, MD</option>
+                            <option value="md-frederick">Frederick County, MD</option>
+                            <option value="md-charles">Charles County, MD</option>
+                            <option value="md-baltimore-co">Baltimore County, MD</option>
+                            <option value="md-baltimore-city">Baltimore City, MD</option>
+                            <option value="md-other">Other Maryland County</option>
+                        </optgroup>
+                        <optgroup label="Virginia">
+                            <option value="va-arlington">Arlington County, VA</option>
+                            <option value="va-fairfax">Fairfax County, VA</option>
+                            <option value="va-loudoun">Loudoun County, VA</option>
+                            <option value="va-prince-william">Prince William County, VA</option>
+                            <option value="va-alexandria">City of Alexandria, VA</option>
+                            <option value="va-other">Other Virginia</option>
+                        </optgroup>
+                    </select>
+                </div>
+            </div>
+            <div class="divider"></div>
+            <div class="calc-value">Transfer Tax: <strong id="transferTax">$0</strong></div>
+            <div class="calc-value">Recordation Tax: <strong id="recordationTax">$0</strong></div>
+            <div class="calc-value">Title Insurance (est): <strong id="titleIns">$0</strong></div>
+            <div class="row" style="margin-top:10px;">
+                <div class="field">
+                    <label>Other Closing Costs ($)</label>
+                    <input type="number" id="otherBuyClosing" placeholder="1,500">
+                </div>
+                <div class="field">
+                    <label>&nbsp;</label>
+                    <div class="calc-value" style="padding-top:10px;">Attorney, appraisal, etc.</div>
+                </div>
+            </div>
+            <div class="calc-value" style="font-weight:600;">Total Purchase Settlement: <strong id="buyClosingTotal">$0</strong></div>
+        </div>
+
+        <!-- Square Footage -->
+        <div class="section">
+            <h2>Square Footage & Construction</h2>
+            <div class="row">
+                <div class="field">
+                    <label>Current Sq Ft</label>
+                    <input type="number" id="currentSF" placeholder="1,200">
+                </div>
+                <div class="field">
+                    <label>Planned Sq Ft</label>
+                    <input type="number" id="plannedSF" placeholder="1,800">
+                </div>
+            </div>
+            <div class="row">
+                <div class="field">
+                    <label>Cost Per Sq Ft ($)</label>
+                    <input type="number" id="costPerSF" placeholder="150">
+                </div>
+                <div class="field">
+                    <label>Permit Costs ($)</label>
+                    <input type="number" id="permitCost" placeholder="5,000">
+                </div>
+            </div>
+            <div class="calc-value">Total Construction: <strong id="totalConstruction">$0</strong></div>
+            <div class="calc-value">Total Construction + Permits: <strong id="totalConstructionPermits">$0</strong></div>
+        </div>
+
+        <!-- Financing -->
+        <div class="section">
+            <h2>Financing / Hard Money</h2>
+            <div class="row">
+                <div class="field">
+                    <label>Loan Amount ($)</label>
+                    <input type="number" id="loanAmount" placeholder="Auto from P+C">
+                </div>
+                <div class="field">
+                    <label>Down Payment ($)</label>
+                    <input type="number" id="downPayment" placeholder="0">
+                </div>
+            </div>
+            <div class="row">
+                <div class="field">
+                    <label>Interest Rate (%)</label>
+                    <input type="number" id="interestRate" placeholder="12" step="0.1">
+                </div>
+                <div class="field">
+                    <label>Origination Points (%)</label>
+                    <input type="number" id="originationPts" placeholder="2" step="0.1">
+                </div>
+            </div>
+            <div class="row">
+                <div class="field">
+                    <label>Project Duration (months)</label>
+                    <input type="number" id="duration" placeholder="6">
+                </div>
+                <div class="field">
+                    <label>Loan Type</label>
+                    <select id="loanType">
+                        <option value="interest-only">Interest Only</option>
+                        <option value="amortized">Amortized</option>
+                    </select>
+                </div>
+            </div>
+            <div class="divider"></div>
+            <div class="calc-value">Origination Fee: <strong id="originationFee">$0</strong></div>
+            <div class="calc-value">Total Interest: <strong id="totalInterest">$0</strong></div>
+            <div class="calc-value">Total Loan Cost: <strong id="totalLoanCost">$0</strong></div>
+        </div>
+
+        <!-- Holding Costs -->
+        <div class="section">
+            <h2>Holding Costs</h2>
+            <div class="row">
+                <div class="field">
+                    <label>Annual Property Tax ($)</label>
+                    <input type="number" id="propertyTax" placeholder="5,000">
+                </div>
+                <div class="field">
+                    <label>Annual Insurance ($)</label>
+                    <input type="number" id="insurance" placeholder="2,400">
+                </div>
+            </div>
+            <div class="row">
+                <div class="field">
+                    <label>Monthly Utilities ($)</label>
+                    <input type="number" id="utilities" placeholder="300">
+                </div>
+                <div class="field">
+                    <label>&nbsp;</label>
+                    <div class="calc-value" style="padding-top:10px;">Utilities Total: <strong id="utilitiesTotal">$0</strong></div>
+                </div>
+            </div>
+            <div class="calc-value">Prorated Holding Cost (<span id="holdMonths">0</span> mo): <strong id="totalHolding">$0</strong></div>
+        </div>
+
+        <!-- Selling Costs -->
+        <div class="section">
+            <h2>Selling Costs</h2>
+            <div class="row">
+                <div class="field">
+                    <label>Agent Commission (%)</label>
+                    <input type="number" id="commission" placeholder="5" step="0.1" value="5">
+                </div>
+                <div class="field">
+                    <label>Settlement/Closing Costs (%)</label>
+                    <input type="number" id="closingCosts" placeholder="1.5" step="0.1" value="1.5">
+                </div>
+            </div>
+            <div class="calc-value">Commission: <strong id="commissionAmt">$0</strong></div>
+            <div class="calc-value">Settlement/Closing: <strong id="closingAmt">$0</strong></div>
+            <div class="calc-value">Total Selling Cost: <strong id="totalSelling">$0</strong></div>
+        </div>
+
+        <!-- Cost Breakdown -->
+        <div class="section">
+            <h2>Cost Breakdown</h2>
+            <div class="breakdown">
+                <div class="breakdown-row"><span>Purchase Price</span><span class="val" id="bPurchase">$0</span></div>
+                <div class="breakdown-row"><span>Purchase Settlement</span><span class="val" id="bBuyClosing">$0</span></div>
+                <div class="breakdown-row"><span>Construction + Permits</span><span class="val" id="bConstruction">$0</span></div>
+                <div class="breakdown-row"><span>Financing (Interest + Points)</span><span class="val" id="bFinancing">$0</span></div>
+                <div class="breakdown-row"><span>Holding (Tax + Insurance + Utilities)</span><span class="val" id="bHolding">$0</span></div>
+                <div class="breakdown-row"><span>Selling (Commission + Settlement)</span><span class="val" id="bSelling">$0</span></div>
+                <div class="breakdown-row total"><span>Total Project Cost</span><span class="val" id="bTotal">$0</span></div>
+            </div>
+        </div>
+
+        <!-- Reverse Calculator -->
+        <div class="section" style="border: 1px solid #4a9eff33;">
+            <h2>🎯 Reverse Calculator</h2>
+            <div class="row">
+                <div class="field">
+                    <label>Desired Profit ($)</label>
+                    <input type="number" id="desiredProfit" placeholder="100,000">
+                </div>
+                <div class="field">
+                    <label>&nbsp;</label>
+                    <div class="calc-value" style="padding-top:10px;font-size:16px;font-weight:700;">Max Purchase: <strong id="maxPurchase" style="color:#34c759;">$0</strong></div>
+                </div>
+            </div>
+            <div class="calc-value" style="font-size:12px;color:#666;">Based on your ARV, construction, financing, holding & selling costs above</div>
+        </div>
+
+        <button class="btn-export" onclick="exportPDF()">📄 Export to PDF</button>
+        <button class="btn-reset" onclick="resetAll()">Reset All Fields</button>
+    </div>
+
+    <script>
+        const fields = ['purchasePrice','arv','location','otherBuyClosing','currentSF','plannedSF','costPerSF','permitCost','loanAmount','downPayment','interestRate','originationPts','duration','loanType','propertyTax','insurance','utilities','commission','closingCosts','desiredProfit'];
+
+        // Transfer & recordation tax rates by location
+        // Sources: DC Code §42-1103/§42-1103.01, MD Tax-Property §12/§13, VA Code §58.1-801/§58.1-802
+        const TAX_RATES = {
+            'manual': { transfer: 0, recordation: 0, label: 'Manual' },
+            // DC: transfer 1.1% under $400K, 1.45% over $400K; recordation same
+            'dc': { transferFn: p => p <= 400000 ? p * 0.011 : p * 0.0145, recordationFn: p => p <= 400000 ? p * 0.011 : p * 0.0145, label: 'DC' },
+            // Maryland: state transfer 0.5%, state recordation ~0.5% ($7/$1000 in many counties adjusted)
+            // County-specific additions
+            'md-montgomery': { transfer: 0.01, recordation: 0.0044 + 0.007, label: 'Montgomery Co' },  // county 1% transfer, state+county recordation
+            'md-pg': { transfer: 0.01, recordation: 0.0055 + 0.007, label: "Prince George's Co" },
+            'md-anne-arundel': { transfer: 0.005, recordation: 0.005 + 0.007, label: 'Anne Arundel Co' },
+            'md-howard': { transfer: 0.005, recordation: 0.005 + 0.007, label: 'Howard Co' },
+            'md-frederick': { transfer: 0.005, recordation: 0.006 + 0.007, label: 'Frederick Co' },
+            'md-charles': { transfer: 0.005, recordation: 0.005 + 0.007, label: 'Charles Co' },
+            'md-baltimore-co': { transfer: 0.015, recordation: 0.005 + 0.007, label: 'Baltimore Co' },
+            'md-baltimore-city': { transfer: 0.015, recordation: 0.005 + 0.01, label: 'Baltimore City' },
+            'md-other': { transfer: 0.005, recordation: 0.005 + 0.007, label: 'Other MD' },
+            // Virginia: grantor tax $1/$1000 (0.1%), recordation $0.25/$100 (0.25%), + regional congestion relief tax in NOVA
+            'va-arlington': { transfer: 0.001 + 0.0015, recordation: 0.0025 + 0.0015, label: 'Arlington Co' },
+            'va-fairfax': { transfer: 0.001 + 0.0015, recordation: 0.0025 + 0.0015, label: 'Fairfax Co' },
+            'va-loudoun': { transfer: 0.001 + 0.0015, recordation: 0.0025 + 0.0015, label: 'Loudoun Co' },
+            'va-prince-william': { transfer: 0.001 + 0.0015, recordation: 0.0025 + 0.0015, label: 'Prince William Co' },
+            'va-alexandria': { transfer: 0.001 + 0.0015, recordation: 0.0025 + 0.0015, label: 'Alexandria' },
+            'va-other': { transfer: 0.001, recordation: 0.0025, label: 'Other VA' },
+        };
+
+        function calcSettlement(location, purchasePrice) {
+            const loc = TAX_RATES[location];
+            if (!loc || location === 'manual') return { transfer: 0, recordation: 0, title: 0 };
+            const transfer = loc.transferFn ? loc.transferFn(purchasePrice) : purchasePrice * loc.transfer;
+            const recordation = loc.recordationFn ? loc.recordationFn(purchasePrice) : purchasePrice * loc.recordation;
+            // Title insurance estimate: ~$5.75 per $1000 of purchase price (industry average)
+            const title = purchasePrice * 0.00575;
+            return { transfer, recordation, title };
+        }
+
+        function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+        function fmt(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
+        function pct(n) { return (n * 100).toFixed(1) + '%'; }
+
+        function calculate() {
+            const purchase = v('purchasePrice');
+            const arv = v('arv');
+            const currentSF = v('currentSF');
+            const plannedSF = v('plannedSF');
+            const costPerSF = v('costPerSF');
+            const permitCost = v('permitCost');
+            const rate = v('interestRate') / 100;
+            const points = v('originationPts') / 100;
+            const months = v('duration');
+            const loanType = document.getElementById('loanType').value;
+            const annualTax = v('propertyTax');
+            const annualIns = v('insurance');
+            const monthlyUtil = v('utilities');
+            const commPct = v('commission') / 100;
+            const closePct = v('closingCosts') / 100;
+            const downPayment = v('downPayment');
+            const location = document.getElementById('location').value;
+            const otherBuyClosing = v('otherBuyClosing');
+
+            // Purchase Settlement
+            const settlement = calcSettlement(location, purchase);
+            document.getElementById('transferTax').textContent = fmt(settlement.transfer);
+            document.getElementById('recordationTax').textContent = fmt(settlement.recordation);
+            document.getElementById('titleIns').textContent = fmt(settlement.title);
+            const buyClosing = settlement.transfer + settlement.recordation + settlement.title + otherBuyClosing;
+            document.getElementById('buyClosingTotal').textContent = fmt(buyClosing);
+
+            // Construction
+            const totalConstruction = plannedSF * costPerSF;
+            const totalConstructionPermits = totalConstruction + permitCost;
+            document.getElementById('totalConstruction').textContent = fmt(totalConstruction);
+            document.getElementById('totalConstructionPermits').textContent = fmt(totalConstructionPermits);
+
+            // Loan - default to purchase + construction + permits if not manually entered
+            const loanInput = document.getElementById('loanAmount');
+            let loan = v('loanAmount');
+            if (!loanInput.value && (purchase || totalConstructionPermits)) {
+                loan = purchase + totalConstructionPermits - downPayment;
+            }
+            if (loan < 0) loan = 0;
+
+            // Financing
+            const originationFee = loan * points;
+            // Split interest: purchase portion = full duration, construction portion = half duration
+            const purchasePortion = Math.max(0, loan - totalConstructionPermits);
+            const constructionPortion = Math.min(loan, totalConstructionPermits);
+            let totalInterest = 0;
+            if (loanType === 'interest-only') {
+                const purchaseInterest = purchasePortion * (rate / 12) * months;
+                const constructionInterest = constructionPortion * (rate / 12) * (months / 2);
+                totalInterest = purchaseInterest + constructionInterest;
+            } else {
+                const monthlyRate = rate / 12;
+                if (monthlyRate > 0 && months > 0) {
+                    // Purchase portion: full duration
+                    let purchaseInterest = 0;
+                    if (purchasePortion > 0) {
+                        const pmt1 = purchasePortion * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
+                        purchaseInterest = (pmt1 * months) - purchasePortion;
+                    }
+                    // Construction portion: half duration (drawn down gradually)
+                    let constructionInterest = 0;
+                    const halfMonths = Math.round(months / 2);
+                    if (constructionPortion > 0 && halfMonths > 0) {
+                        const pmt2 = constructionPortion * (monthlyRate * Math.pow(1 + monthlyRate, halfMonths)) / (Math.pow(1 + monthlyRate, halfMonths) - 1);
+                        constructionInterest = (pmt2 * halfMonths) - constructionPortion;
+                    }
+                    totalInterest = purchaseInterest + constructionInterest;
+                }
+            }
+            const totalLoanCost = originationFee + totalInterest;
+
+            document.getElementById('originationFee').textContent = fmt(originationFee);
+            document.getElementById('totalInterest').textContent = fmt(totalInterest);
+            document.getElementById('totalLoanCost').textContent = fmt(totalLoanCost);
+
+            // Holding
+            const holdingTax = (annualTax / 12) * months;
+            const holdingIns = (annualIns / 12) * months;
+            const holdingUtil = monthlyUtil * months;
+            const totalHolding = holdingTax + holdingIns + holdingUtil;
+            document.getElementById('holdMonths').textContent = months || 0;
+            document.getElementById('utilitiesTotal').textContent = fmt(holdingUtil);
+            document.getElementById('totalHolding').textContent = fmt(totalHolding);
+
+            // Selling
+            const commissionAmt = arv * commPct;
+            const closingAmt = arv * closePct;
+            const totalSelling = commissionAmt + closingAmt;
+            document.getElementById('commissionAmt').textContent = fmt(commissionAmt);
+            document.getElementById('closingAmt').textContent = fmt(closingAmt);
+            document.getElementById('totalSelling').textContent = fmt(totalSelling);
+
+            // Totals
+            const totalCost = purchase + buyClosing + totalConstructionPermits + totalLoanCost + totalHolding + totalSelling;
+            const profit = arv - totalCost;
+            const cashInvested = downPayment + buyClosing + (purchase + totalConstructionPermits - loan);
+            const roi = totalCost > 0 ? profit / totalCost : 0;
+            const coc = cashInvested > 0 ? profit / cashInvested : 0;
+
+            // Summary
+            document.getElementById('sumTotalCost').textContent = fmt(totalCost);
+            const profitEl = document.getElementById('sumProfit');
+            profitEl.textContent = fmt(profit);
+            profitEl.className = 'value ' + (profit >= 0 ? 'profit' : 'loss');
+
+            const roiEl = document.getElementById('sumROI');
+            roiEl.textContent = pct(roi);
+            roiEl.className = 'value ' + (roi >= 0 ? 'profit' : 'loss');
+
+            const cocEl = document.getElementById('sumCoC');
+            cocEl.textContent = cashInvested > 0 ? pct(coc) : 'N/A';
+            cocEl.className = 'value ' + (coc >= 0 ? 'profit' : 'loss');
+
+            // Breakdown
+            document.getElementById('bPurchase').textContent = fmt(purchase);
+            document.getElementById('bBuyClosing').textContent = fmt(buyClosing);
+            document.getElementById('bConstruction').textContent = fmt(totalConstructionPermits);
+            document.getElementById('bFinancing').textContent = fmt(totalLoanCost);
+            document.getElementById('bHolding').textContent = fmt(totalHolding);
+            document.getElementById('bSelling').textContent = fmt(totalSelling);
+            document.getElementById('bTotal').textContent = fmt(totalCost);
+
+            // Reverse Calculator: Max purchase price for desired profit
+            const desiredProfit = v('desiredProfit');
+            if (desiredProfit > 0 && arv > 0) {
+                // We need to solve for purchase price (P) such that:
+                // ARV - (P + settlement(P) + construction + financing(P) + holding + selling) = desiredProfit
+                // Settlement and financing depend on P, so we iterate
+                let maxP = arv - desiredProfit; // starting guess
+                for (let i = 0; i < 20; i++) {
+                    // Recalculate costs at this purchase price
+                    const s = calcSettlement(location, maxP);
+                    const bc = s.transfer + s.recordation + s.title + otherBuyClosing;
+                    
+                    // Loan at this purchase price (if loan wasn't manually set)
+                    let iterLoan = v('loanAmount');
+                    if (!document.getElementById('loanAmount').value && (maxP || totalConstructionPermits)) {
+                        iterLoan = maxP + totalConstructionPermits - downPayment;
+                    }
+                    if (iterLoan < 0) iterLoan = 0;
+                    
+                    const iterOrigFee = iterLoan * points;
+                    // Split interest: purchase portion = full duration, construction = half duration
+                    const iterPurchasePortion = Math.max(0, iterLoan - totalConstructionPermits);
+                    const iterConstructionPortion = Math.min(iterLoan, totalConstructionPermits);
+                    let iterInterest = 0;
+                    if (loanType === 'interest-only') {
+                        const iterPurchaseInt = iterPurchasePortion * (rate / 12) * months;
+                        const iterConstInt = iterConstructionPortion * (rate / 12) * (months / 2);
+                        iterInterest = iterPurchaseInt + iterConstInt;
+                    } else {
+                        const mr = rate / 12;
+                        if (mr > 0 && months > 0) {
+                            if (iterPurchasePortion > 0) {
+                                const pmt1 = iterPurchasePortion * (mr * Math.pow(1 + mr, months)) / (Math.pow(1 + mr, months) - 1);
+                                iterInterest += (pmt1 * months) - iterPurchasePortion;
+                            }
+                            const hm = Math.round(months / 2);
+                            if (iterConstructionPortion > 0 && hm > 0) {
+                                const pmt2 = iterConstructionPortion * (mr * Math.pow(1 + mr, hm)) / (Math.pow(1 + mr, hm) - 1);
+                                iterInterest += (pmt2 * hm) - iterConstructionPortion;
+                            }
+                        }
+                    }
+                    const iterFinancing = iterOrigFee + iterInterest;
+                    
+                    const iterTotal = maxP + bc + totalConstructionPermits + iterFinancing + totalHolding + totalSelling;
+                    const iterProfit = arv - iterTotal;
+                    const diff = iterProfit - desiredProfit;
+                    maxP += diff * 0.8; // damped convergence
+                    if (Math.abs(diff) < 1) break;
+                }
+                document.getElementById('maxPurchase').textContent = maxP > 0 ? fmt(Math.round(maxP)) : '$0';
+                document.getElementById('maxPurchase').style.color = maxP > 0 ? '#34c759' : '#ff4444';
+            } else {
+                document.getElementById('maxPurchase').textContent = '--';
+                document.getElementById('maxPurchase').style.color = '#888';
+            }
+
+            saveInputs();
+        }
+
+        function saveInputs() {
+            const data = {};
+            fields.forEach(id => {
+                data[id] = document.getElementById(id).value;
+            });
+            localStorage.setItem('re_deal_calc', JSON.stringify(data));
+        }
+
+        function loadInputs() {
+            const saved = localStorage.getItem('re_deal_calc');
+            if (saved) {
+                const data = JSON.parse(saved);
+                fields.forEach(id => {
+                    if (data[id] !== undefined && data[id] !== '') {
+                        document.getElementById(id).value = data[id];
+                    }
+                });
+            }
+        }
+
+        function resetAll() {
+            fields.forEach(id => {
+                const el = document.getElementById(id);
+                if (el.tagName === 'SELECT') { el.selectedIndex = 0; }
+                else if (id === 'commission') { el.value = '5'; }
+                else if (id === 'closingCosts') { el.value = '1.5'; }
+                else { el.value = ''; }
+            });
+            localStorage.removeItem('re_deal_calc');
+            calculate();
+        }
+
+        function exportPDF() {
+            const purchase = v('purchasePrice');
+            const arv = v('arv');
+            const location = document.getElementById('location');
+            const locLabel = location.options[location.selectedIndex].text;
+            const settlement = calcSettlement(location.value, purchase);
+            const otherBC = v('otherBuyClosing');
+            const buyClose = settlement.transfer + settlement.recordation + settlement.title + otherBC;
+            const plannedSF = v('plannedSF');
+            const costPerSF = v('costPerSF');
+            const permitCost = v('permitCost');
+            const totalConst = plannedSF * costPerSF;
+            const totalConstPermit = totalConst + permitCost;
+            const months = v('duration');
+            const rate = v('interestRate');
+            const pts = v('originationPts');
+            const annualTax = v('propertyTax');
+            const annualIns = v('insurance');
+            const monthlyUtil = v('utilities');
+            const commPct = v('commission');
+            const closePct = v('closingCosts');
+
+            const loanInput = document.getElementById('loanAmount');
+            let loan = v('loanAmount');
+            const dp = v('downPayment');
+            if (!loanInput.value && (purchase || totalConstPermit)) loan = purchase + totalConstPermit - dp;
+            if (loan < 0) loan = 0;
+
+            const origFee = loan * (pts / 100);
+            const loanType = document.getElementById('loanType').value;
+            const purchasePart = Math.max(0, loan - totalConstPermit);
+            const constPart = Math.min(loan, totalConstPermit);
+            let totInt = 0;
+            if (loanType === 'interest-only') {
+                totInt = purchasePart * ((rate/100) / 12) * months + constPart * ((rate/100) / 12) * (months / 2);
+            } else {
+                const mr = (rate/100)/12;
+                if (mr > 0 && months > 0) {
+                    if (purchasePart > 0) { const pmt1 = purchasePart * (mr * Math.pow(1+mr, months)) / (Math.pow(1+mr, months)-1); totInt += (pmt1*months)-purchasePart; }
+                    const hm = Math.round(months / 2);
+                    if (constPart > 0 && hm > 0) { const pmt2 = constPart * (mr * Math.pow(1+mr, hm)) / (Math.pow(1+mr, hm)-1); totInt += (pmt2*hm)-constPart; }
+                }
+            }
+            const totLoan = origFee + totInt;
+
+            const holdTax = (annualTax/12)*months;
+            const holdIns = (annualIns/12)*months;
+            const holdUtil = monthlyUtil * months;
+            const totHold = holdTax + holdIns + holdUtil;
+
+            const commAmt = arv * (commPct/100);
+            const closeAmt = arv * (closePct/100);
+            const totSell = commAmt + closeAmt;
+
+            const totalCost = purchase + buyClose + totalConstPermit + totLoan + totHold + totSell;
+            const profit = arv - totalCost;
+            const cashIn = dp + buyClose + (purchase + totalConstPermit - loan);
+            const roi = totalCost > 0 ? ((profit/totalCost)*100).toFixed(1) : '0.0';
+            const coc = cashIn > 0 ? ((profit/cashIn)*100).toFixed(1) : 'N/A';
+
+            const date = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+
+            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Deal Analysis</title>
+<style>
+body{font-family:-apple-system,Helvetica,Arial,sans-serif;margin:40px;color:#222;font-size:13px;line-height:1.5;}
+h1{font-size:20px;margin-bottom:4px;}
+.date{color:#888;font-size:12px;margin-bottom:24px;}
+.section{margin-bottom:20px;}
+.section h2{font-size:14px;text-transform:uppercase;color:#666;border-bottom:1px solid #ddd;padding-bottom:4px;margin-bottom:8px;letter-spacing:1px;}
+table{width:100%;border-collapse:collapse;}
+td{padding:4px 0;vertical-align:top;}
+td:last-child{text-align:right;font-weight:500;}
+.total td{border-top:2px solid #222;font-weight:700;padding-top:8px;font-size:14px;}
+.summary-box{background:#f5f5f5;border-radius:8px;padding:16px;margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.summary-box .item{text-align:center;}
+.summary-box .label{font-size:11px;text-transform:uppercase;color:#888;}
+.summary-box .val{font-size:18px;font-weight:700;margin-top:2px;}
+.profit{color:#1a8d3a;} .loss{color:#cc2222;}
+@media print{body{margin:20px;}}
+</style></head><body>
+<h1>🏠 Real Estate Deal Analysis</h1>
+<div class="date">${date} · ${locLabel}</div>
+
+<div class="summary-box">
+<div class="item"><div class="label">Total Project Cost</div><div class="val">${fmt(totalCost)}</div></div>
+<div class="item"><div class="label">Gross Profit</div><div class="val ${profit>=0?'profit':'loss'}">${fmt(profit)}</div></div>
+<div class="item"><div class="label">ROI</div><div class="val ${profit>=0?'profit':'loss'}">${roi}%</div></div>
+<div class="item"><div class="label">Cash on Cash</div><div class="val ${profit>=0?'profit':'loss'}">${coc}${coc!=='N/A'?'%':''}</div></div>
+</div>
+
+<div class="section"><h2>Purchase & Sale</h2><table>
+<tr><td>Purchase Price</td><td>${fmt(purchase)}</td></tr>
+<tr><td>After Repair Value (ARV)</td><td>${fmt(arv)}</td></tr>
+</table></div>
+
+<div class="section"><h2>Purchase Settlement</h2><table>
+<tr><td>Transfer Tax</td><td>${fmt(settlement.transfer)}</td></tr>
+<tr><td>Recordation Tax</td><td>${fmt(settlement.recordation)}</td></tr>
+<tr><td>Title Insurance (est)</td><td>${fmt(settlement.title)}</td></tr>
+<tr><td>Other Closing Costs</td><td>${fmt(otherBC)}</td></tr>
+<tr class="total"><td>Total Purchase Settlement</td><td>${fmt(buyClose)}</td></tr>
+</table></div>
+
+<div class="section"><h2>Construction</h2><table>
+<tr><td>Current / Planned Sq Ft</td><td>${v('currentSF').toLocaleString()} → ${plannedSF.toLocaleString()} SF</td></tr>
+<tr><td>Cost Per Sq Ft</td><td>${fmt(costPerSF)}</td></tr>
+<tr><td>Construction Cost</td><td>${fmt(totalConst)}</td></tr>
+<tr><td>Permit Costs</td><td>${fmt(permitCost)}</td></tr>
+<tr class="total"><td>Total Construction + Permits</td><td>${fmt(totalConstPermit)}</td></tr>
+</table></div>
+
+<div class="section"><h2>Financing</h2><table>
+<tr><td>Loan Amount</td><td>${fmt(loan)}</td></tr>
+<tr><td>Down Payment</td><td>${fmt(dp)}</td></tr>
+<tr><td>Interest Rate / Type</td><td>${rate}% · ${loanType === 'interest-only' ? 'Interest Only' : 'Amortized'}</td></tr>
+<tr><td>Origination Points</td><td>${pts}% (${fmt(origFee)})</td></tr>
+<tr><td>Project Duration</td><td>${months} months</td></tr>
+<tr><td>Total Interest</td><td>${fmt(totInt)}</td></tr>
+<tr class="total"><td>Total Financing Cost</td><td>${fmt(totLoan)}</td></tr>
+</table></div>
+
+<div class="section"><h2>Holding Costs (${months} mo)</h2><table>
+<tr><td>Property Tax</td><td>${fmt(holdTax)} (${fmt(annualTax)}/yr)</td></tr>
+<tr><td>Insurance</td><td>${fmt(holdIns)} (${fmt(annualIns)}/yr)</td></tr>
+<tr><td>Utilities</td><td>${fmt(holdUtil)} (${fmt(monthlyUtil)}/mo)</td></tr>
+<tr class="total"><td>Total Holding Costs</td><td>${fmt(totHold)}</td></tr>
+</table></div>
+
+<div class="section"><h2>Selling Costs</h2><table>
+<tr><td>Agent Commission (${commPct}%)</td><td>${fmt(commAmt)}</td></tr>
+<tr><td>Settlement/Closing (${closePct}%)</td><td>${fmt(closeAmt)}</td></tr>
+<tr class="total"><td>Total Selling Costs</td><td>${fmt(totSell)}</td></tr>
+</table></div>
+
+<div class="section"><h2>Project Summary</h2><table>
+<tr><td>Purchase Price</td><td>${fmt(purchase)}</td></tr>
+<tr><td>Purchase Settlement</td><td>${fmt(buyClose)}</td></tr>
+<tr><td>Construction + Permits</td><td>${fmt(totalConstPermit)}</td></tr>
+<tr><td>Financing</td><td>${fmt(totLoan)}</td></tr>
+<tr><td>Holding Costs</td><td>${fmt(totHold)}</td></tr>
+<tr><td>Selling Costs</td><td>${fmt(totSell)}</td></tr>
+<tr class="total"><td>Total Project Cost</td><td>${fmt(totalCost)}</td></tr>
+<tr class="total"><td>Gross Profit</td><td class="${profit>=0?'profit':'loss'}">${fmt(profit)}</td></tr>
+</table></div>
+
+</body></html>`;
+
+            const blob = new Blob([html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const win = window.open(url, '_blank');
+            // On mobile, prompt print dialog for PDF
+            if (win) {
+                win.onload = () => {
+                    setTimeout(() => win.print(), 500);
+                };
+            } else {
+                // Fallback: download as HTML
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'deal-analysis.html';
+                a.click();
+            }
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
+
+        fields.forEach(id => {
+            document.getElementById(id).addEventListener('input', calculate);
+            document.getElementById(id).addEventListener('change', calculate);
+        });
+
+        // Register service worker for offline PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(() => {});
+        }
+
+        loadInputs();
+        calculate();
+    </script>
+</body>
+</html>
