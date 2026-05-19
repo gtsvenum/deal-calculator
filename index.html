@@ -700,22 +700,19 @@ td:last-child{text-align:right;font-weight:500;}
 
 </body></html>`;
 
-            const blob = new Blob([html], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            const win = window.open(url, '_blank');
-            // On mobile, prompt print dialog for PDF
-            if (win) {
-                win.onload = () => {
-                    setTimeout(() => win.print(), 500);
-                };
-            } else {
-                // Fallback: download as HTML
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'deal-analysis.html';
-                a.click();
-            }
-            setTimeout(() => URL.revokeObjectURL(url), 10000);
+            // Use hidden iframe to avoid popup blockers
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+            document.body.appendChild(iframe);
+            const doc = iframe.contentDocument || iframe.contentWindow.document;
+            doc.open();
+            doc.write(html);
+            doc.close();
+            iframe.contentWindow.focus();
+            setTimeout(() => {
+                iframe.contentWindow.print();
+                setTimeout(() => document.body.removeChild(iframe), 2000);
+            }, 600);
         }
 
         fields.forEach(id => {
