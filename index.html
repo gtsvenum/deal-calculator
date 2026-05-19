@@ -652,7 +652,7 @@ td:last-child{text-align:right;font-weight:500;}
 .summary-box .label{font-size:11px;text-transform:uppercase;color:#888;}
 .summary-box .val{font-size:18px;font-weight:700;margin-top:2px;}
 .profit{color:#1a8d3a;} .loss{color:#cc2222;}
-@media print{body{margin:20px;}}
+@media print{body > *:not(#__print_report__){display:none!important;}#__print_report__{display:block!important;}body{margin:0;}}
 </style></head><body>
 <h1>🏠 Real Estate Deal Analysis</h1>
 <div class="date">${date} · ${locLabel}</div>
@@ -723,19 +723,13 @@ ${otherSellClose > 0 ? `<tr><td>Other</td><td>${fmt(otherSellClose)}</td></tr>` 
 
 </body></html>`;
 
-            // Use hidden iframe to avoid popup blockers
-            const iframe = document.createElement('iframe');
-            iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
-            document.body.appendChild(iframe);
-            const doc = iframe.contentDocument || iframe.contentWindow.document;
-            doc.open();
-            doc.write(html);
-            doc.close();
-            iframe.contentWindow.focus();
-            setTimeout(() => {
-                iframe.contentWindow.print();
-                setTimeout(() => document.body.removeChild(iframe), 2000);
-            }, 600);
+            // Inject into a hidden div, print, then remove
+            const printDiv = document.createElement('div');
+            printDiv.id = '__print_report__';
+            printDiv.innerHTML = html;
+            document.body.appendChild(printDiv);
+            window.print();
+            document.body.removeChild(printDiv);
         }
 
         fields.forEach(id => {
