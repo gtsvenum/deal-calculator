@@ -251,12 +251,13 @@
                     <input type="number" id="commission" placeholder="5" step="0.1" value="5">
                 </div>
                 <div class="field">
-                    <label>Settlement/Closing Costs (%)</label>
-                    <input type="number" id="closingCosts" placeholder="1.5" step="0.1" value="1.5">
+                    <label>Other Selling Costs ($)</label>
+                    <input type="number" id="otherSellClosing" placeholder="0" step="100">
                 </div>
             </div>
             <div class="calc-value">Commission: <strong id="commissionAmt">$0</strong></div>
-            <div class="calc-value">Settlement/Closing: <strong id="closingAmt">$0</strong></div>
+            <div class="calc-value">Transfer Tax (seller): <strong id="sellTransferTax">$0</strong></div>
+            <div class="calc-value">Settlement Fee: <strong id="sellSettlementFee">$0</strong></div>
             <div class="calc-value">Total Selling Cost: <strong id="totalSelling">$0</strong></div>
         </div>
 
@@ -295,7 +296,7 @@
     </div>
 
     <script>
-        const fields = ['purchasePrice','arv','location','otherBuyClosing','currentSF','plannedSF','costPerSF','permitCost','loanAmount','downPayment','interestRate','originationPts','duration','loanType','propertyTax','insurance','utilities','commission','closingCosts','desiredProfit'];
+        const fields = ['purchasePrice','arv','location','otherBuyClosing','currentSF','plannedSF','costPerSF','permitCost','loanAmount','downPayment','interestRate','originationPts','duration','loanType','propertyTax','insurance','utilities','commission','otherSellClosing','desiredProfit'];
 
         // Transfer & recordation tax rates by location
         // Sources: DC Code §42-1103/§42-1103.01, MD Tax-Property §12/§13, VA Code §58.1-801/§58.1-802
@@ -322,6 +323,26 @@
             'va-alexandria': { transfer: 0.001 + 0.0015, recordation: 0.0025 + 0.0015, label: 'Alexandria' },
             'va-other': { transfer: 0.001, recordation: 0.0025, label: 'Other VA' },
         };
+
+        function calcSellSettlement(location, salePrice) {
+            // Seller's closing costs (excl. agent commission):
+            // DC: seller pays transfer tax (1.1% ≤$400K, 1.45% >$400K) + $600 settlement fee
+            // MD: seller pays county transfer tax + $600 settlement fee
+            // VA: seller pays grantor's tax (0.1% + 0.15% NOVA) + $600 settlement fee
+            const settlementFee = 600;
+            if (!location || location === 'manual') return { transferTax: 0, settlementFee, total: settlementFee };
+            let transferTax = 0;
+            if (location === 'dc') {
+                transferTax = salePrice <= 400000 ? salePrice * 0.011 : salePrice * 0.0145;
+            } else if (location.startsWith('md-')) {
+                const mdRates = { 'md-montgomery': 0.01, 'md-pg': 0.01, 'md-anne-arundel': 0.005, 'md-howard': 0.005, 'md-frederick': 0.005, 'md-charles': 0.005, 'md-baltimore-co': 0.015, 'md-baltimore-city': 0.015, 'md-other': 0.005 };
+                transferTax = salePrice * (mdRates[location] || 0.005);
+            } else if (location.startsWith('va-')) {
+                const isNova = ['va-arlington','va-fairfax','va-loudoun','va-prince-william','va-alexandria'].includes(location);
+                transferTax = salePrice * (isNova ? 0.0025 : 0.001);
+            }
+            return { transferTax, settlementFee, total: transferTax + settlementFee };
+        }
 
         function calcSettlement(location, purchasePrice) {
             const loc = TAX_RATES[location];
@@ -352,7 +373,7 @@
             const annualIns = v('insurance');
             const monthlyUtil = v('utilities');
             const commPct = v('commission') / 100;
-            const closePct = v('closingCosts') / 100;
+            const otherSellClosing = v('otherSellClosing');
             const downPayment = v('downPayment');
             const location = document.getElementById('location').value;
             const otherBuyClosing = v('otherBuyClosing');
@@ -425,10 +446,11 @@
 
             // Selling
             const commissionAmt = arv * commPct;
-            const closingAmt = arv * closePct;
-            const totalSelling = commissionAmt + closingAmt;
+            const sellSettlement = calcSellSettlement(location, arv);
+            const totalSelling = commissionAmt + sellSettlement.total + otherSellClosing;
             document.getElementById('commissionAmt').textContent = fmt(commissionAmt);
-            document.getElementById('closingAmt').textContent = fmt(closingAmt);
+            document.getElementById('sellTransferTax').textContent = fmt(sellSettlement.transferTax);
+            document.getElementById('sellSettlementFee').textContent = fmt(sellSettlement.settlementFee);
             document.getElementById('totalSelling').textContent = fmt(totalSelling);
 
             // Totals
@@ -546,7 +568,6 @@
                 const el = document.getElementById(id);
                 if (el.tagName === 'SELECT') { el.selectedIndex = 0; }
                 else if (id === 'commission') { el.value = '5'; }
-                else if (id === 'closingCosts') { el.value = '1.5'; }
                 else { el.value = ''; }
             });
             localStorage.removeItem('re_deal_calc');
@@ -573,7 +594,7 @@
             const annualIns = v('insurance');
             const monthlyUtil = v('utilities');
             const commPct = v('commission');
-            const closePct = v('closingCosts');
+            const otherSellClose = v('otherSellClosing');
 
             const loanInput = document.getElementById('loanAmount');
             let loan = v('loanAmount');
@@ -604,8 +625,8 @@
             const totHold = holdTax + holdIns + holdUtil;
 
             const commAmt = arv * (commPct/100);
-            const closeAmt = arv * (closePct/100);
-            const totSell = commAmt + closeAmt;
+            const pdfSellSettlement = calcSellSettlement(location.value, arv);
+            const totSell = commAmt + pdfSellSettlement.total + otherSellClose;
 
             const totalCost = purchase + buyClose + totalConstPermit + totLoan + totHold + totSell;
             const profit = arv - totalCost;
@@ -683,7 +704,9 @@ td:last-child{text-align:right;font-weight:500;}
 
 <div class="section"><h2>Selling Costs</h2><table>
 <tr><td>Agent Commission (${commPct}%)</td><td>${fmt(commAmt)}</td></tr>
-<tr><td>Settlement/Closing (${closePct}%)</td><td>${fmt(closeAmt)}</td></tr>
+<tr><td>Transfer Tax (seller)</td><td>${fmt(pdfSellSettlement.transferTax)}</td></tr>
+<tr><td>Settlement Fee</td><td>${fmt(pdfSellSettlement.settlementFee)}</td></tr>
+${otherSellClose > 0 ? `<tr><td>Other</td><td>${fmt(otherSellClose)}</td></tr>` : ''}
 <tr class="total"><td>Total Selling Costs</td><td>${fmt(totSell)}</td></tr>
 </table></div>
 
