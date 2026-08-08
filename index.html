@@ -652,7 +652,8 @@ td:last-child{text-align:right;font-weight:500;}
 .summary-box .label{font-size:11px;text-transform:uppercase;color:#888;}
 .summary-box .val{font-size:18px;font-weight:700;margin-top:2px;}
 .profit{color:#1a8d3a;} .loss{color:#cc2222;}
-@media print{body > *:not(#__print_report__){display:none!important;}#__print_report__{display:block!important;}body{margin:0;}}
+@page{margin:12mm;}
+@media print{body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.section{break-inside:avoid;page-break-inside:avoid;}}
 </style></head><body>
 <h1>🏠 Real Estate Deal Analysis</h1>
 <div class="date">${date} · ${locLabel}</div>
@@ -723,13 +724,77 @@ ${otherSellClose > 0 ? `<tr><td>Other</td><td>${fmt(otherSellClose)}</td></tr>` 
 
 </body></html>`;
 
-            // Inject into a hidden div, print, then remove
-            const printDiv = document.createElement('div');
-            printDiv.id = '__print_report__';
-            printDiv.innerHTML = html;
-            document.body.appendChild(printDiv);
-            window.print();
-            document.body.removeChild(printDiv);
+            openPrintable(html);
+        }
+
+        // Robust cross-browser printable output.
+        // Desktop: hidden iframe -> native print dialog (Save as PDF).
+        // iOS / PWA / anywhere print() is blocked or async: open the report in a
+        // new tab with its own Print button so Share -> Print -> Save to PDF works.
+        function openPrintable(html) {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+                               window.navigator.standalone === true;
+
+            if (isIOS || standalone) { printFallbackTab(html); return; }
+
+            try {
+                const iframe = document.createElement('iframe');
+                iframe.setAttribute('aria-hidden', 'true');
+                iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+                let cleaned = false;
+                const cleanup = () => {
+                    if (cleaned) return;
+                    cleaned = true;
+                    setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 500);
+                };
+                iframe.onload = () => {
+                    try {
+                        const win = iframe.contentWindow;
+                        win.focus();
+                        if (win.matchMedia) {
+                            const mql = win.matchMedia('print');
+                            if (mql.addEventListener) mql.addEventListener('change', e => { if (!e.matches) cleanup(); });
+                        }
+                        win.addEventListener('afterprint', cleanup);
+                        win.print();
+                        // Safety net if afterprint never fires.
+                        setTimeout(cleanup, 60000);
+                    } catch (err) {
+                        cleanup();
+                        printFallbackTab(html);
+                    }
+                };
+                // srcdoc (not document.write): onload then fires AFTER the report
+                // is parsed. document.write raced the about:blank load event and
+                // printed an empty page - that was the original bug.
+                iframe.srcdoc = html;
+                document.body.appendChild(iframe);
+            } catch (err) {
+                printFallbackTab(html);
+            }
+        }
+
+        function printFallbackTab(html) {
+            const bar = `<div class="noprint" style="position:sticky;top:0;background:#1a1a1a;color:#fff;padding:12px 16px;margin:-40px -40px 24px -40px;display:flex;gap:12px;align-items:center;font-family:-apple-system,Helvetica,Arial,sans-serif;">` +
+                `<button onclick="window.print()" style="background:#1a8d3a;color:#fff;border:0;border-radius:6px;padding:10px 18px;font-size:15px;font-weight:600;">Save as PDF / Print</button>` +
+                `<span style="font-size:12px;opacity:.75;">or use your browser's Share &rarr; Print</span></div>` +
+                `<style>@media print{.noprint{display:none!important;}body{margin:0!important;}}</style>`;
+            const doc = html.replace('<body>', '<body>' + bar);
+            const blob = new Blob([doc], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const w = window.open(url, '_blank');
+            if (!w) {
+                // Popup blocked - fall back to a same-tab download of the report.
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'deal-analysis.html';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+            setTimeout(() => URL.revokeObjectURL(url), 120000);
         }
 
         fields.forEach(id => {
