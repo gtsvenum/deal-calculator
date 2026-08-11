@@ -54,6 +54,7 @@
             .summary-item .value { font-size: 17px; }
         }
     </style>
+    <script src="jspdf.umd.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -545,7 +546,138 @@
 
         function saveInputs() {
             const data = {};
-            fields.forEach(id => {
+            // ---- Real PDF generation (jsPDF). Returns true on success. ----
+        function renderPdf(meta, summary, sections) {
+            const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+            if (!J) return false;
+            try {
+                const doc = new J({ unit: 'pt', format: 'letter' });
+                const PW = doc.internal.pageSize.getWidth();
+                const PH = doc.internal.pageSize.getHeight();
+                const M = 54;
+                const RIGHT = PW - M;
+                let y = M;
+
+                const need = (h) => { if (y + h > PH - M) { doc.addPage(); y = M; } };
+                // jsPDF's built-in fonts are WinAnsi only - map/strip anything outside it
+                // or the glyphs render as garbage (arrows, emoji, curly quotes).
+                const t = (s) => String(s)
+                    .replace(/[\u2192\u2794]/g, '->').replace(/[\u2018\u2019]/g, "'")
+                    .replace(/[\u201c\u201d]/g, '"').replace(/[\u2013\u2014]/g, '-')
+                    .replace(/[^\x20-\xFF]/g, '');
+                const gray = [136, 136, 136], dark = [34, 34, 34];
+                const green = [26, 141, 58], red = [204, 34, 34];
+
+                // Title
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor.apply(doc, dark);
+                doc.text('Real Estate Deal Analysis', M, y); y += 16;
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor.apply(doc, gray);
+                doc.text(t(meta.date + '  \u00b7  ' + meta.locLabel), M, y); y += 22;
+
+                // Summary box (2 x 2)
+                const boxW = RIGHT - M, boxH = 96;
+                need(boxH + 12);
+                doc.setFillColor(245, 245, 245);
+                doc.roundedRect(M, y, boxW, boxH, 6, 6, 'F');
+                const cw = boxW / 2, ch = boxH / 2;
+                summary.forEach(function (it, i) {
+                    const cx = M + (i % 2) * cw + cw / 2;
+                    const cy = y + Math.floor(i / 2) * ch;
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, gray);
+                    doc.text(t(it[0]).toUpperCase(), cx, cy + 22, { align: 'center' });
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+                    doc.setTextColor.apply(doc, it[2] === 1 ? green : it[2] === -1 ? red : dark);
+                    doc.text(t(it[1]), cx, cy + 40, { align: 'center' });
+                });
+                y += boxH + 24;
+
+                sections.forEach(function (sec) {
+                    need(46);
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(102, 102, 102);
+                    doc.text(t(sec.t).toUpperCase(), M, y); y += 5;
+                    doc.setDrawColor(221, 221, 221); doc.setLineWidth(0.7);
+                    doc.line(M, y, RIGHT, y); y += 13;
+
+                    sec.rows.forEach(function (r) {
+                        const isTotal = !!r[2];
+                        const tone = r[3];
+                        need(isTotal ? 24 : 16);
+                        if (isTotal) {
+                            y += 3;
+                            doc.setDrawColor(34, 34, 34); doc.setLineWidth(1.1);
+                            doc.line(M, y - 9, RIGHT, y - 9);
+                        }
+                        doc.setFont('helvetica', isTotal ? 'bold' : 'normal');
+                        doc.setFontSize(isTotal ? 11 : 10);
+                        doc.setTextColor.apply(doc, dark);
+                        doc.text(t(r[0]), M, y);
+                        doc.setTextColor.apply(doc, tone === 1 ? green : tone === -1 ? red : dark);
+                        doc.text(t(r[1]), RIGHT, y, { align: 'right' });
+                        y += isTotal ? 18 : 15;
+                    });
+                    y += 10;
+                });
+
+                const d = new Date();
+                const stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                const name = 'Deal-Analysis-' + stamp + '.pdf';
+
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+                                   window.navigator.standalone === true;
+
+                if (isIOS || standalone) {
+                    // Downloads are unreliable in iOS Safari / installed PWAs.
+                    // Open the PDF itself so Share -> Save to Files works.
+                    const url = URL.createObjectURL(doc.output('blob'));
+                    const w = window.open(url, '_blank');
+                    if (!w) {
+                        const a = document.createElement('a');
+                        a.href = url; a.download = name;
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    }
+                    setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
+                } else {
+                    doc.save(name);
+                }
+                return true;
+            } catch (err) {
+                return false;
+            }
+        }
+
+        // ---- Printable HTML fallback (only used if jsPDF fails to load) ----
+        function buildReportHtml(meta, summary, sections) {
+            const cls = function (t) { return t === 1 ? ' class="profit"' : t === -1 ? ' class="loss"' : ''; };
+            let h = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Deal Analysis</title><style>' +
+                'body{font-family:-apple-system,Helvetica,Arial,sans-serif;margin:40px;color:#222;font-size:13px;line-height:1.5;}' +
+                'h1{font-size:20px;margin-bottom:4px;}.date{color:#888;font-size:12px;margin-bottom:24px;}' +
+                '.section{margin-bottom:20px;}.section h2{font-size:14px;text-transform:uppercase;color:#666;border-bottom:1px solid #ddd;padding-bottom:4px;margin-bottom:8px;letter-spacing:1px;}' +
+                'table{width:100%;border-collapse:collapse;}td{padding:4px 0;vertical-align:top;}td:last-child{text-align:right;font-weight:500;}' +
+                '.total td{border-top:2px solid #222;font-weight:700;padding-top:8px;font-size:14px;}' +
+                '.summary-box{background:#f5f5f5;border-radius:8px;padding:16px;margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}' +
+                '.summary-box .item{text-align:center;}.summary-box .label{font-size:11px;text-transform:uppercase;color:#888;}' +
+                '.summary-box .val{font-size:18px;font-weight:700;margin-top:2px;}.profit{color:#1a8d3a;}.loss{color:#cc2222;}' +
+                '@page{margin:12mm;}@media print{body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.section{break-inside:avoid;page-break-inside:avoid;}}' +
+                '</style></head><body><h1>\ud83c\udfe0 Real Estate Deal Analysis</h1>' +
+                '<div class="date">' + meta.date + ' \u00b7 ' + meta.locLabel + '</div><div class="summary-box">';
+            summary.forEach(function (it) {
+                h += '<div class="item"><div class="label">' + it[0] + '</div><div class="val' +
+                     (it[2] === 1 ? ' profit' : it[2] === -1 ? ' loss' : '') + '">' + it[1] + '</div></div>';
+            });
+            h += '</div>';
+            sections.forEach(function (sec) {
+                h += '<div class="section"><h2>' + sec.t + '</h2><table>';
+                sec.rows.forEach(function (r) {
+                    h += '<tr' + (r[2] ? ' class="total"' : '') + '><td>' + r[0] + '</td><td' + cls(r[3]) + '>' + r[1] + '</td></tr>';
+                });
+                h += '</table></div>';
+            });
+            return h + '</body></html>';
+        }
+
+        fields.forEach(id => {
                 data[id] = document.getElementById(id).value;
             });
             localStorage.setItem('re_deal_calc', JSON.stringify(data));
@@ -636,95 +768,73 @@
 
             const date = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
 
-            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Deal Analysis</title>
-<style>
-body{font-family:-apple-system,Helvetica,Arial,sans-serif;margin:40px;color:#222;font-size:13px;line-height:1.5;}
-h1{font-size:20px;margin-bottom:4px;}
-.date{color:#888;font-size:12px;margin-bottom:24px;}
-.section{margin-bottom:20px;}
-.section h2{font-size:14px;text-transform:uppercase;color:#666;border-bottom:1px solid #ddd;padding-bottom:4px;margin-bottom:8px;letter-spacing:1px;}
-table{width:100%;border-collapse:collapse;}
-td{padding:4px 0;vertical-align:top;}
-td:last-child{text-align:right;font-weight:500;}
-.total td{border-top:2px solid #222;font-weight:700;padding-top:8px;font-size:14px;}
-.summary-box{background:#f5f5f5;border-radius:8px;padding:16px;margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-.summary-box .item{text-align:center;}
-.summary-box .label{font-size:11px;text-transform:uppercase;color:#888;}
-.summary-box .val{font-size:18px;font-weight:700;margin-top:2px;}
-.profit{color:#1a8d3a;} .loss{color:#cc2222;}
-@page{margin:12mm;}
-@media print{body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.section{break-inside:avoid;page-break-inside:avoid;}}
-</style></head><body>
-<h1>🏠 Real Estate Deal Analysis</h1>
-<div class="date">${date} · ${locLabel}</div>
+            const summary = [
+                ['Total Project Cost', fmt(totalCost), 0],
+                ['Gross Profit', fmt(profit), profit >= 0 ? 1 : -1],
+                ['ROI', roi + '%', profit >= 0 ? 1 : -1],
+                ['Cash on Cash', coc + (coc !== 'N/A' ? '%' : ''), profit >= 0 ? 1 : -1]
+            ];
 
-<div class="summary-box">
-<div class="item"><div class="label">Total Project Cost</div><div class="val">${fmt(totalCost)}</div></div>
-<div class="item"><div class="label">Gross Profit</div><div class="val ${profit>=0?'profit':'loss'}">${fmt(profit)}</div></div>
-<div class="item"><div class="label">ROI</div><div class="val ${profit>=0?'profit':'loss'}">${roi}%</div></div>
-<div class="item"><div class="label">Cash on Cash</div><div class="val ${profit>=0?'profit':'loss'}">${coc}${coc!=='N/A'?'%':''}</div></div>
-</div>
+            const sections = [
+                { t: 'Purchase & Sale', rows: [
+                    ['Purchase Price', fmt(purchase)],
+                    ['After Repair Value (ARV)', fmt(arv)]
+                ]},
+                { t: 'Purchase Settlement', rows: [
+                    ['Transfer Tax', fmt(settlement.transfer)],
+                    ['Recordation Tax', fmt(settlement.recordation)],
+                    ['Title Insurance (est)', fmt(settlement.title)],
+                    ['Other Closing Costs', fmt(otherBC)],
+                    ['Total Purchase Settlement', fmt(buyClose), 1]
+                ]},
+                { t: 'Construction', rows: [
+                    ['Current / Planned Sq Ft', v('currentSF').toLocaleString() + ' -> ' + plannedSF.toLocaleString() + ' SF'],
+                    ['Cost Per Sq Ft', fmt(costPerSF)],
+                    ['Construction Cost', fmt(totalConst)],
+                    ['Permit Costs', fmt(permitCost)],
+                    ['Total Construction + Permits', fmt(totalConstPermit), 1]
+                ]},
+                { t: 'Financing', rows: [
+                    ['Loan Amount', fmt(loan)],
+                    ['Down Payment', fmt(dp)],
+                    ['Interest Rate / Type', rate + '% \u00b7 ' + (loanType === 'interest-only' ? 'Interest Only' : 'Amortized')],
+                    ['Origination Points', pts + '% (' + fmt(origFee) + ')'],
+                    ['Project Duration', months + ' months'],
+                    ['Total Interest', fmt(totInt)],
+                    ['Total Financing Cost', fmt(totLoan), 1]
+                ]},
+                { t: 'Holding Costs (' + months + ' mo)', rows: [
+                    ['Property Tax', fmt(holdTax) + ' (' + fmt(annualTax) + '/yr)'],
+                    ['Insurance', fmt(holdIns) + ' (' + fmt(annualIns) + '/yr)'],
+                    ['Utilities', fmt(holdUtil) + ' (' + fmt(monthlyUtil) + '/mo)'],
+                    ['Total Holding Costs', fmt(totHold), 1]
+                ]},
+                { t: 'Selling Costs', rows: [
+                    ['Agent Commission (' + commPct + '%)', fmt(commAmt)],
+                    ['Transfer Tax (seller)', fmt(pdfSellSettlement.transferTax)],
+                    ['Settlement Fee', fmt(pdfSellSettlement.settlementFee)]
+                ].concat(otherSellClose > 0 ? [['Other', fmt(otherSellClose)]] : [])
+                 .concat([['Total Selling Costs', fmt(totSell), 1]])
+                },
+                { t: 'Project Summary', rows: [
+                    ['Purchase Price', fmt(purchase)],
+                    ['Purchase Settlement', fmt(buyClose)],
+                    ['Construction + Permits', fmt(totalConstPermit)],
+                    ['Financing', fmt(totLoan)],
+                    ['Holding Costs', fmt(totHold)],
+                    ['Selling Costs', fmt(totSell)],
+                    ['Total Project Cost', fmt(totalCost), 1],
+                    ['Gross Profit', fmt(profit), 1, profit >= 0 ? 1 : -1]
+                ]}
+            ];
 
-<div class="section"><h2>Purchase & Sale</h2><table>
-<tr><td>Purchase Price</td><td>${fmt(purchase)}</td></tr>
-<tr><td>After Repair Value (ARV)</td><td>${fmt(arv)}</td></tr>
-</table></div>
+            const meta = { date: date, locLabel: locLabel };
 
-<div class="section"><h2>Purchase Settlement</h2><table>
-<tr><td>Transfer Tax</td><td>${fmt(settlement.transfer)}</td></tr>
-<tr><td>Recordation Tax</td><td>${fmt(settlement.recordation)}</td></tr>
-<tr><td>Title Insurance (est)</td><td>${fmt(settlement.title)}</td></tr>
-<tr><td>Other Closing Costs</td><td>${fmt(otherBC)}</td></tr>
-<tr class="total"><td>Total Purchase Settlement</td><td>${fmt(buyClose)}</td></tr>
-</table></div>
-
-<div class="section"><h2>Construction</h2><table>
-<tr><td>Current / Planned Sq Ft</td><td>${v('currentSF').toLocaleString()} → ${plannedSF.toLocaleString()} SF</td></tr>
-<tr><td>Cost Per Sq Ft</td><td>${fmt(costPerSF)}</td></tr>
-<tr><td>Construction Cost</td><td>${fmt(totalConst)}</td></tr>
-<tr><td>Permit Costs</td><td>${fmt(permitCost)}</td></tr>
-<tr class="total"><td>Total Construction + Permits</td><td>${fmt(totalConstPermit)}</td></tr>
-</table></div>
-
-<div class="section"><h2>Financing</h2><table>
-<tr><td>Loan Amount</td><td>${fmt(loan)}</td></tr>
-<tr><td>Down Payment</td><td>${fmt(dp)}</td></tr>
-<tr><td>Interest Rate / Type</td><td>${rate}% · ${loanType === 'interest-only' ? 'Interest Only' : 'Amortized'}</td></tr>
-<tr><td>Origination Points</td><td>${pts}% (${fmt(origFee)})</td></tr>
-<tr><td>Project Duration</td><td>${months} months</td></tr>
-<tr><td>Total Interest</td><td>${fmt(totInt)}</td></tr>
-<tr class="total"><td>Total Financing Cost</td><td>${fmt(totLoan)}</td></tr>
-</table></div>
-
-<div class="section"><h2>Holding Costs (${months} mo)</h2><table>
-<tr><td>Property Tax</td><td>${fmt(holdTax)} (${fmt(annualTax)}/yr)</td></tr>
-<tr><td>Insurance</td><td>${fmt(holdIns)} (${fmt(annualIns)}/yr)</td></tr>
-<tr><td>Utilities</td><td>${fmt(holdUtil)} (${fmt(monthlyUtil)}/mo)</td></tr>
-<tr class="total"><td>Total Holding Costs</td><td>${fmt(totHold)}</td></tr>
-</table></div>
-
-<div class="section"><h2>Selling Costs</h2><table>
-<tr><td>Agent Commission (${commPct}%)</td><td>${fmt(commAmt)}</td></tr>
-<tr><td>Transfer Tax (seller)</td><td>${fmt(pdfSellSettlement.transferTax)}</td></tr>
-<tr><td>Settlement Fee</td><td>${fmt(pdfSellSettlement.settlementFee)}</td></tr>
-${otherSellClose > 0 ? `<tr><td>Other</td><td>${fmt(otherSellClose)}</td></tr>` : ''}
-<tr class="total"><td>Total Selling Costs</td><td>${fmt(totSell)}</td></tr>
-</table></div>
-
-<div class="section"><h2>Project Summary</h2><table>
-<tr><td>Purchase Price</td><td>${fmt(purchase)}</td></tr>
-<tr><td>Purchase Settlement</td><td>${fmt(buyClose)}</td></tr>
-<tr><td>Construction + Permits</td><td>${fmt(totalConstPermit)}</td></tr>
-<tr><td>Financing</td><td>${fmt(totLoan)}</td></tr>
-<tr><td>Holding Costs</td><td>${fmt(totHold)}</td></tr>
-<tr><td>Selling Costs</td><td>${fmt(totSell)}</td></tr>
-<tr class="total"><td>Total Project Cost</td><td>${fmt(totalCost)}</td></tr>
-<tr class="total"><td>Gross Profit</td><td class="${profit>=0?'profit':'loss'}">${fmt(profit)}</td></tr>
-</table></div>
-
-</body></html>`;
-
-            openPrintable(html);
+            // Primary path: generate a real PDF file with jsPDF (no print dialog,
+            // works in Safari/iOS/PWA). Falls back to the printable-HTML route.
+            if (!renderPdf(meta, summary, sections)) {
+                openPrintable(buildReportHtml(meta, summary, sections));
+            }
         }
 
         // Robust cross-browser printable output.
