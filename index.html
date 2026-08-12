@@ -622,29 +622,51 @@
                 const stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
                 const name = 'Deal-Analysis-' + stamp + '.pdf';
 
-                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-                const standalone = window.matchMedia('(display-mode: standalone)').matches ||
-                                   window.navigator.standalone === true;
-
-                if (isIOS || standalone) {
-                    // Downloads are unreliable in iOS Safari / installed PWAs.
-                    // Open the PDF itself so Share -> Save to Files works.
-                    const url = URL.createObjectURL(doc.output('blob'));
-                    const w = window.open(url, '_blank');
-                    if (!w) {
-                        const a = document.createElement('a');
-                        a.href = url; a.download = name;
-                        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                    }
-                    setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
-                } else {
-                    doc.save(name);
-                }
+                deliverPdf(doc.output('blob'), name);
                 return true;
             } catch (err) {
                 return false;
             }
+        }
+
+        // ---- Hand the finished PDF to the user ----
+        // iOS Safari will NOT render a PDF from a blob: URL - window.open(blob)
+        // just shows a blank tab. So on iOS the share sheet is the primary route
+        // (Save to Files / Print / Mail all live there), with a download-anchor
+        // fallback. Must stay synchronous-ish: navigator.share requires the
+        // click gesture, which we still hold here.
+        function deliverPdf(blob, name) {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+                               window.navigator.standalone === true;
+
+            const anchorDownload = function () {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = name;
+                a.rel = 'noopener';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+            };
+
+            if (isIOS || standalone) {
+                try {
+                    const file = new File([blob], name, { type: 'application/pdf' });
+                    if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+                        navigator.share({ files: [file], title: 'Deal Analysis' })
+                            .catch(function (err) {
+                                // AbortError = user dismissed the sheet on purpose.
+                                if (!err || err.name !== 'AbortError') anchorDownload();
+                            });
+                        return;
+                    }
+                } catch (err) { /* fall through */ }
+            }
+            anchorDownload();
         }
 
         // ---- Printable HTML fallback (only used if jsPDF fails to load) ----

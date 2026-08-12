@@ -1,4 +1,4 @@
-const CACHE = 're-deal-calc-v6';
+const CACHE = 're-deal-calc-v7';
 const ASSETS = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png', 'jspdf.umd.min.js'];
 
 self.addEventListener('install', e => {
